@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 放置陪伴 - V0.3</title>
+    <link rel="stylesheet" href="style.css?v=10">
+</head>
+
+<body>
+    <div id="game-container">
+        <!-- 顶层状态栏 -->
+        <header id="status-bar">
+            <div id="time-weather">
+                <span id="current-time">10:00</span>
+                <span id="current-weather">☀️</span>
+            </div>
+            <div id="time-speed-control">
+                <button id="speed-btn" class="speed-btn">⏱️ 600x (测试)</button>
+            </div>
+        </header>
+
+        <!-- 主场景区 -->
+        <main id="scene-container">
+            <!-- 房间背景 -->
+            <div id="room-bg"></div>
+
+            <!-- 角色与状态 -->
+            <div id="character-container" class="pos-center">
+                <div id="thought-bubble" class="hidden">💭 发呆中...</div>
+                <!-- 面对面聊天的回复气泡 -->
+                <div id="chat-bubble" class="hidden">什么事？</div>
+                <!-- V0.2: 真实的透明底人物图 -->
+                <img id="character-img" src="assets/character.png?v=2" alt="角色"
+                    onerror="this.src=''; this.alt='[未发现图片]';" />
+            </div>
+
+            <!-- 桌面惊喜物 -->
+            <div id="surprise-item" class="hidden">💌</div>
+
+            <!-- 新增的人物状态栏 -->
+            <div id="char-status-bar">
+                <span>📍 当前行踪：</span><span id="char-status-text">就在房间里发呆</span>
+            </div>
+        </main>
+
+        <!-- 底部操作区 -->
+        <footer id="action-bar">
+            <!-- 在家的当面交流框，默认隐藏 -->
+            <div id="home-chat-area" class="hidden">
+                <input type="text" id="home-chat-input" placeholder="直接对他说...">
+                <button id="home-send-btn">🗣️</button>
+            </div>
+
+            <!-- 外出的微信按钮，默认隐藏 -->
+            <button id="chat-btn" class="hidden">💬 微信</button>
+
+            <button id="settings-btn">⚙️ 设置</button>
+            <button id="dev-btn">🐛 调试</button>
+        </footer>
+
+        <!-- 设置（捏人）面板 -->
+        <div id="settings-modal" class="hidden">
+            <div class="modal-content">
+                <h3>角色人设配置</h3>
+                <div class="form-group">
+                    <label>角色姓名</label>
+                    <input type="text" id="persona-name" value="保镖小哥" placeholder="例如：李雷">
+                </div>
+                <div class="form-group">
+                    <label>详细设定(Prompt)</label>
+                    <textarea id="persona-prompt" rows="5"
+                        placeholder="例如：一个冷酷但内心温柔的私人保镖，话少，喜欢看书和健身。">一个冷爽、有肌肉但不油腻的退役特殊安保人员。外表冷漠，但会默默记住细节。平时在家喜欢健身或擦拭装备。</textarea>
+                </div>
+                <button id="save-settings-btn">生成作息并保存</button>
+                <button id="close-settings-btn" class="secondary-btn">取消</button>
+                <div id="settings-loading" class="hidden">DeepSeek 正在思考并编排他的作息...</div>
+            </div>
+        </div>
+
+        <!-- 聊天悬浮窗 -->
+        <div id="chat-modal" class="hidden">
+            <div id="chat-header">
+                <span id="chat-title">📱 微信</span>
+                <span id="chat-status-indicator" class="hidden"> (对方正在输入...)</span>
+                <button id="close-chat-btn">x</button>
+            </div>
+            <div id="chat-messages"></div>
+            <div id="chat-input-area">
+                <input type="text" id="chat-input" placeholder="写点什么呢..." disabled>
+                <button id="send-msg-btn">发送</button>
+            </div>
+        </div>
+
+        <!-- 惊喜弹窗 -->
+        <div id="surprise-modal" class="hidden">
+            <div class="modal-content">
+                <h3 id="surprise-title">桌上留着便签</h3>
+                <p id="surprise-text">...</p>
+                <button id="close-surprise-btn">收下</button>
+            </div>
+        </div>
+
+        <!-- 开发者调试面板 -->
+        <div id="debug-panel" class="hidden">
+            <div class="debug-header">运行状态 (Debug)
+                <div class="debug-actions">
+                    <button id="sync-time-btn">🔄 同步现实时间</button>
+                    <button id="close-debug-btn">x</button>
+                </div>
+            </div>
+            <div class="debug-content">
+                <div><strong>虚拟时间:</strong> 周<span id="dbg-day">1</span> <span id="dbg-time">10:00</span></div>
+                <div><strong>当前状态:</strong> <span id="dbg-state">idle</span></div>
+                <div><strong>正在进行:</strong> <span id="dbg-activity">发呆</span></div>
+                <br>
+                <div><strong>作息解析表:</strong></div>
+                <pre id="dbg-schedule">尚未生成</pre>
+                <hr>
+                <div><strong>LLM 交互日志:</strong></div>
+                <div id="dbg-logs"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js?v=12"></script>
+</body>
+
+</html>

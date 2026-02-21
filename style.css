@@ -1,0 +1,584 @@
+/* 基础重置 */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+body {
+    background-color: #2c3e50;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    min-height: 100vh;
+    padding: 20px 0;
+    color: #333;
+    overflow-y: auto;
+}
+
+#game-container {
+    width: 375px;
+    height: 812px;
+    background-color: #f7f9fa;
+    border-radius: 40px;
+    overflow: hidden;
+    position: relative;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+}
+
+/* 顶层状态栏 */
+#status-bar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    padding: 20px 25px 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    z-index: 10;
+    color: #fff;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+    transition: color 1s ease;
+}
+
+#status-bar.day-mode {
+    color: #555;
+    text-shadow: none;
+}
+
+#status-bar.night-mode {
+    color: #f0f0f0;
+}
+
+.speed-btn {
+    cursor: pointer;
+    background: rgba(255, 255, 255, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    padding: 6px 12px;
+    border-radius: 12px;
+    color: inherit;
+    font-size: 13px;
+    font-weight: bold;
+    backdrop-filter: blur(4px);
+    transition: all 0.2s;
+}
+
+.speed-btn:active {
+    transform: scale(0.9);
+}
+
+/* 主场景区 */
+#scene-container {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+}
+
+#room-bg {
+    width: 100%;
+    height: 100%;
+    background-size: cover;
+    background-position: center bottom;
+    transition: background-image 2s ease-in-out;
+}
+
+/* 角色与状态 V0.2：透明底动画版 */
+#character-container {
+    position: absolute;
+    bottom: 25%;
+    left: 50%;
+    /* 改回 50% 基准 */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    /* 会让气泡和人物自动横向居中 */
+    justify-content: flex-end;
+    /* 贴底对齐 */
+    transition: all 2s ease-in-out;
+    z-index: 5;
+    transform: translateX(-50%);
+    /* 基础的从中心点向左回拉一半，确保完全居中 */
+}
+
+/* 几种假定好的方位锚点（模拟在房间走动） */
+#character-container.pos-center {
+    transform: translateX(-50%) translate(0, 0) scale(1);
+}
+
+#character-container.pos-left {
+    transform: translateX(-50%) translate(-60px, 20px) scale(1.1);
+}
+
+#character-container.pos-right {
+    transform: translateX(-50%) translate(80px, -10px) scale(0.9);
+}
+
+#character-container.pos-away {
+    transform: translateX(-50%) translate(0, 0) scale(1);
+    /* V0.3 修改为完全隐身，只有在家才能看到人 */
+    opacity: 0;
+    pointer-events: none;
+}
+
+#character-img {
+    height: 250px;
+    /* 从 350px 缩为 250px 避免过大超出屏幕 */
+    width: auto;
+    object-fit: contain;
+    animation: idle-breathe 4s ease-in-out infinite;
+    filter: drop-shadow(0 10px 10px rgba(0, 0, 0, 0.3));
+}
+
+@keyframes idle-breathe {
+
+    0%,
+    100% {
+        transform: scaleY(1);
+    }
+
+    50% {
+        transform: scaleY(0.98);
+    }
+}
+
+#thought-bubble {
+    background: rgba(255, 255, 255, 0.9);
+    padding: 8px 12px;
+    border-radius: 15px;
+    font-size: 14px;
+    margin-bottom: -10px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    position: relative;
+    z-index: 6;
+}
+
+#thought-bubble::after,
+#chat-bubble::after {
+    content: '';
+    position: absolute;
+    bottom: -6px;
+    left: 50%;
+    transform: translateX(-50%);
+    border-width: 6px 6px 0;
+    border-style: solid;
+    border-color: rgba(255, 255, 255, 0.9) transparent transparent transparent;
+}
+
+#chat-bubble {
+    background: #e3f2fd;
+    color: #1565c0;
+    font-weight: bold;
+    font-size: 15px;
+    padding: 10px 15px;
+    margin-bottom: 5px;
+    border-radius: 15px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+    position: relative;
+    z-index: 7;
+    transition: opacity 0.3s;
+}
+
+#chat-bubble::after {
+    border-color: #e3f2fd transparent transparent transparent;
+}
+
+/* 桌面惊喜物 */
+#surprise-item {
+    position: absolute;
+    bottom: 35%;
+    left: 25%;
+    font-size: 50px;
+    cursor: pointer;
+    animation: bounce 2s ease-in-out infinite;
+    filter: drop-shadow(0 4px 4px rgba(0, 0, 0, 0.3));
+    z-index: 4;
+}
+
+@keyframes bounce {
+
+    0%,
+    100% {
+        transform: translateY(0) scale(1);
+    }
+
+    50% {
+        transform: translateY(-3px) scale(1.05);
+    }
+}
+
+/* 新增人物状态栏 */
+#char-status-bar {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    background: rgba(255, 255, 255, 0.85);
+    padding: 10px 20px;
+    font-size: 14px;
+    color: #333;
+    font-weight: bold;
+    backdrop-filter: blur(5px);
+    border-top: 1px solid rgba(0, 0, 0, 0.05);
+    z-index: 8;
+    display: flex;
+    justify-content: space-between;
+}
+
+/* 底部操作区 */
+#action-bar {
+    height: 80px;
+    background: white;
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    padding: 0 20px;
+    box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.05);
+    z-index: 10;
+}
+
+#action-bar button {
+    background: #f0f2f5;
+    border: none;
+    padding: 12px 25px;
+    border-radius: 20px;
+    font-size: 16px;
+    font-weight: 500;
+    color: #444;
+    cursor: pointer;
+    transition: background 0.2s, transform 0.1s;
+}
+
+#action-bar button:active {
+    transform: scale(0.95);
+    background: #e4e6e9;
+}
+
+/* 在家当面聊天的输入栏 */
+#home-chat-area {
+    display: flex;
+    flex: 1;
+    gap: 10px;
+    margin-right: 15px;
+}
+
+#home-chat-input {
+    flex: 1;
+    padding: 10px 15px;
+    border: 1px solid #ddd;
+    border-radius: 20px;
+    background: #f9f9f9;
+    outline: none;
+}
+
+#home-send-btn {
+    padding: 0 15px !important;
+    background: #4caf50 !important;
+    color: white !important;
+}
+
+#chat-btn {
+    background: #e8f5e9 !important;
+    color: #2e7d32 !important;
+}
+
+#settings-btn {
+    color: #1976D2 !important;
+}
+
+/* 模态框共用基础 */
+.modal-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 200;
+}
+
+.modal-content {
+    background: #fff;
+    padding: 25px;
+    border-radius: 20px;
+    width: 85%;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+/* 聊天悬浮窗 */
+#chat-modal {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 90%;
+    height: 70%;
+    background: #f2f2f2;
+    border-radius: 20px;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+    z-index: 100;
+    overflow: hidden;
+    transition: opacity 0.3s, transform 0.3s;
+}
+
+#chat-modal.hidden {
+    opacity: 0;
+    pointer-events: none;
+    transform: translate(-50%, -45%);
+}
+
+#chat.debug-header {
+    background: #333;
+    padding: 8px 12px;
+    border-radius: 10px 10px 0 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-weight: bold;
+}
+
+.debug-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.debug-actions button {
+    background: #555;
+    border: none;
+    color: #fff;
+    cursor: pointer;
+    border-radius: 4px;
+    padding: 2px 6px;
+    font-size: 11px;
+}
+
+.debug-actions button:hover {
+    background: #777;
+}
+
+.debug-content {
+    font-weight: bold;
+    border-bottom: 1px solid #ddd;
+}
+
+#chat-header {
+    background: #eaeaea;
+    padding: 15px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-weight: bold;
+    border-bottom: 1px solid #ddd;
+}
+
+#close-chat-btn {
+    background: none;
+    border: none;
+    font-size: 20px;
+    cursor: pointer;
+    color: #888;
+}
+
+#chat-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.message {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+}
+
+.message.ai-message {
+    justify-content: flex-start;
+}
+
+.message.user-message {
+    flex-direction: row-reverse;
+}
+
+.message .avatar {
+    font-size: 24px;
+}
+
+.message .content {
+    background: white;
+    padding: 10px 15px;
+    border-radius: 15px;
+    max-width: 75%;
+    font-size: 15px;
+    line-height: 1.4;
+    position: relative;
+    word-break: break-all;
+}
+
+.message.system-message .content {
+    font-size: 12px;
+    color: #888;
+    background: transparent;
+    text-align: center;
+    width: 100%;
+    max-width: 100%;
+    margin: 0 auto;
+    padding: 5px;
+}
+
+.message.user-message .content {
+    background: #95ec69;
+}
+
+.message .time {
+    display: block;
+    font-size: 11px;
+    color: #999;
+    margin-top: 5px;
+    text-align: right;
+}
+
+#chat-input-area {
+    padding: 15px;
+    background: white;
+    display: flex;
+    gap: 10px;
+    border-top: 1px solid #ddd;
+}
+
+#chat-input {
+    flex: 1;
+    padding: 10px 15px;
+    border: 1px solid #eee;
+    border-radius: 20px;
+    outline: none;
+    background: #f9f9f9;
+}
+
+#send-msg-btn {
+    background: #07c160;
+    color: white;
+    border: none;
+    padding: 0 20px;
+    border-radius: 20px;
+    cursor: pointer;
+    font-weight: bold;
+}
+
+#send-msg-btn:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+}
+
+/* 惊喜弹窗和设置面板共用 .modal-overlay, 这里偷懒直接在根部复用或嵌套 */
+#surprise-modal,
+#settings-modal {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 200;
+}
+
+#surprise-modal.hidden,
+#settings-modal.hidden {
+    display: none;
+}
+
+.form-group label {
+    display: block;
+    font-size: 14px;
+    color: #666;
+    margin-bottom: 5px;
+}
+
+.form-group input,
+.form-group textarea {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #ccc;
+    border-radius: 10px;
+    box-sizing: border-box;
+    resize: none;
+}
+
+#save-settings-btn {
+    background: #2196F3;
+    color: white;
+    border: none;
+    padding: 12px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 16px;
+    margin-top: 5px;
+}
+
+.secondary-btn {
+    background: #eee !important;
+    color: #333 !important;
+    border: none;
+    padding: 12px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 16px;
+}
+
+#settings-loading {
+    text-align: center;
+    color: #f44336;
+    font-size: 14px;
+    margin-top: 5px;
+}
+
+/* 调试面板 */
+#debug-panel {
+    position: absolute;
+    bottom: 70px;
+    right: 20px;
+    width: 380px;
+    background: rgba(0, 0, 0, 0.8);
+    color: #fff;
+    border-radius: 10px;
+    font-size: 12px;
+    z-index: 20;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+}
+
+#debug-panel.hidden {
+    display: none;
+}
+
+.debug-header {
+    cursor: pointer;
+}
+
+#dbg-schedule {
+    margin-top: 5px;
+    max-height: 150px;
+    overflow-y: auto;
+    color: #aaa;
+    font-size: 10px;
+}
+
+.hidden {
+    display: none !important;
+}
