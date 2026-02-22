@@ -270,6 +270,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 name: personaName,
                 persona: personaPrompt,
                 time_info: timeInfo,
+                schedule_info: schedule ? JSON.stringify(schedule) : "",
                 user_message: userMessage,
                 history: chatHistory.slice(-25)
             };
@@ -293,7 +294,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const reqBody = {
                 name: personaName,
                 persona: personaPrompt,
-                time_info: `目前是 ${timeStr}。`
+                time_info: `目前是 ${timeStr}。`,
+                schedule_info: schedule ? JSON.stringify(schedule) : ""
             };
             const res = await fetch('/api/surprise', {
                 method: 'POST',
@@ -385,6 +387,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 name: personaName,
                 persona: personaPrompt,
                 time_info: `今天是星期${dayStr} 的 ${timeStr}。你正在 ${currentActivity} 。指令：${systemInstruction}`,
+                schedule_info: schedule ? JSON.stringify(schedule) : "",
                 user_message: "（暗中观察了你一眼）",
                 history: []
             };
@@ -512,7 +515,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const timeInfo = `今天是虚拟时间 星期${dayStr} 的 ${timeStr}。你本来正在 ${currentActivity} (${characterState === 'home' ? '在家里' : '在外面'})。`;
 
         try {
-            const reqBody = { name: personaName, persona: personaPrompt, time_info: timeInfo };
+            const reqBody = { name: personaName, persona: personaPrompt, time_info: timeInfo, schedule_info: schedule ? JSON.stringify(schedule) : "" };
             const res = await fetch('/api/random_event', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },

@@ -27,6 +27,7 @@ class ChatInput(BaseModel):
     name: str
     persona: str
     time_info: str
+    schedule_info: str = ""
     user_message: str
     history: List[ChatMessage]
 
@@ -34,6 +35,7 @@ class SurpriseInput(BaseModel):
     name: str
     persona: str
     time_info: str
+    schedule_info: str = ""
 
 async def call_deepseek(messages: List[Dict[str, str]]) -> str:
     async with httpx.AsyncClient(timeout=60.0) as client:
@@ -106,6 +108,8 @@ async def generate_schedule(data: PersonaInput):
 async def chat(data: ChatInput):
     # 【防御时间幻觉核心】：强行剥夺模型自行计算时间的能力，将游戏虚拟状态以自然语言注入系统。
     sys_prompt = f'''你正在扮演陪伴游戏中的角色。你的名字是 {data.name}。你的性格设定是：{data.persona}。
+你的每周作息表如下（JSON格式）：
+{data.schedule_info}
 !!!必须遵守的当前物理情境（绝对防御你的时间幻觉）!!!：
 【{data.time_info}】
 
@@ -151,6 +155,8 @@ async def chat(data: ChatInput):
 @app.post("/api/surprise")
 async def generate_surprise(data: SurpriseInput):
     sys_prompt = f'''你正在扮演陪伴游戏中的角色。你的名字是 {data.name}。你的性格设定是：{data.persona}。
+你的每周作息表如下（JSON格式）：
+{data.schedule_info}
 当前的虚拟时间情境是：{data.time_info}
 你给玩家在桌子上留了一张便签，可能是一句简单的关心、分享你刚才见到的趣事、或者带了一个小礼物的留言。
 只输出便签文字内容，不要带引号，不要超过3句话。
@@ -166,10 +172,13 @@ class RandomEventInput(BaseModel):
     name: str
     persona: str
     time_info: str
+    schedule_info: str = ""
 
 @app.post("/api/random_event")
 async def generate_random_event(data: RandomEventInput):
     sys_prompt = f'''你是一个虚拟陪伴游戏的神编剧。请根据角色姓名 {data.name} 和人设 {data.persona}，
+你的每周作息表如下（JSON格式）：
+{data.schedule_info}
 结合他当前所处的绝对情境【{data.time_info}】，
 马上生成一件他“此刻突然决定去做”或者“刚刚碰上的”随机小事件（必须符合常理但又有一点突发感，不要太惊悚）。
 严格以JSON格式输出：
