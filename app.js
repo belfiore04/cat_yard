@@ -81,12 +81,69 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentSpeedIndex = 3; // 默认测试速
     let timeTicker = null;
 
-    // --- 系统初始化 ---
+    // --- 数据持久化 (LocalStorage) ---
+    function saveState() {
+        const stateData = {
+            personaName,
+            personaPrompt,
+            schedule,
+            chatHistory
+        };
+        localStorage.setItem('ai_companion_save', JSON.stringify(stateData));
+    }
+
+    function loadState() {
+        const dataStr = localStorage.getItem('ai_companion_save');
+        if (!dataStr) return false;
+        try {
+            const data = JSON.parse(dataStr);
+            if (data.personaName) personaName = data.personaName;
+            if (data.personaPrompt) personaPrompt = data.personaPrompt;
+            if (data.schedule) schedule = data.schedule;
+            if (data.chatHistory) chatHistory = data.chatHistory;
+
+            document.getElementById('persona-name').value = personaName;
+            document.getElementById('persona-prompt').value = personaPrompt;
+            document.getElementById('chat-title').innerText = `📱 和 ${personaName} 的聊天`;
+
+            // 恢复历史记录UI
+            chatMessages.innerHTML = '';
+            chatHistory.forEach(msg => {
+                if (msg.role !== 'system') {
+                    appendMessage(msg.content, msg.role === 'user' ? 'user' : 'ai', true);
+                }
+            });
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+
+            return true;
+        } catch (e) {
+            console.error(e);
+            return false;
+        }
+    }
+
+    // --- 系统初始化 (V0.5 默认同步系统时间) ---
+    const now = new Date();
+    simulatedDay = now.getDay() === 0 ? 7 : now.getDay();
+    simulatedHour = now.getHours();
+    simulatedMinute = now.getMinutes();
+
+    // 默认切到现实流速 (1倍速)
+    currentSpeedIndex = 0;
+    timeScaleObj = speedPresets[currentSpeedIndex];
+    speedBtn.innerText = timeScaleObj.label;
+
+    const hasSave = loadState();
     updateEnvTime();
 
-    // 默认触发一次作息生成 (生成期间强制在画面中心展示人物，避免黑屏错觉)
-    applyCharacterVisual('pos-center', false);
-    generateSchedule();
+    if (!hasSave) {
+        // 第一次游玩：触发默认作息生成
+        applyCharacterVisual('pos-center', false);
+        generateSchedule();
+    } else {
+        // 读取存档成功：恢复已有状态
+        parseScheduleAndSetState();
+    }
 
     function startTimeTicker() {
         if (timeTicker) clearInterval(timeTicker);
@@ -163,6 +220,7 @@ document.addEventListener('DOMContentLoaded', () => {
             schedule = await res.json();
             appendDebugLog('GenerateSchedule', reqBody, schedule);
             dbgSchedule.innerText = JSON.stringify(schedule, null, 2);
+            saveState(); // 存档
             // 这里加入 2 秒延迟再应用由于作息计算可能导致的“外出消失”，让你至少能看他一眼
             setTimeout(() => parseScheduleAndSetState(), 2000);
         } catch (e) {
@@ -187,7 +245,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 persona: personaPrompt,
                 time_info: timeInfo,
                 user_message: userMessage,
-                history: chatHistory.slice(-5)
+                history: chatHistory.slice(-25)
             };
             const res = await fetch('/api/chat', {
                 method: 'POST',
@@ -407,6 +465,7 @@ document.addEventListener('DOMContentLoaded', () => {
         sysDiv.className = `message system-message`;
         sysDiv.innerHTML = `<div class="content">【系统】已重新连接到 ${personaName} 的通讯终端</div>`;
         chatMessages.appendChild(sysDiv);
+        saveState(); // 存档
     });
 
     devBtn.addEventListener('click', () => debugPanel.classList.remove('hidden'));
@@ -469,6 +528,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }, 8000);
 
+        saveState(); // 存档
         isFetchingAI = false;
     }
 
@@ -545,10 +605,11 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
+        saveState(); // 存档
         isFetchingAI = false;
     }
 
-    function appendMessage(text, sender) {
+    function appendMessage(text, sender, skipScroll = false) {
         const msgDiv = document.createElement('div');
         msgDiv.className = `message ${sender}-message`;
         const avatarStr = sender === 'user' ? '🟢' : '🔵';
@@ -556,6 +617,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
         msgDiv.innerHTML = `<span class="avatar">${avatarStr}</span><div class="content">${text}<br><span class="time">${timeStr}</span></div>`;
         chatMessages.appendChild(msgDiv);
-        chatMessages.scrollTop = chatMessages.scrollHeight;
+        if (!skipScroll) chatMessages.scrollTop = chatMessages.scrollHeight;
     }
 });
