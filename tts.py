@@ -1,6 +1,6 @@
 """
 MiniMax TTS WebSocket 客户端
-复用自 ai_group_chat，支持角色音色映射和流式音频生成
+完全复用自 ai_drama_player，支持角色音色映射和流式音频生成
 """
 import asyncio
 import json
@@ -11,9 +11,12 @@ import websockets
 
 import os
 
-TTS_API_KEY = os.getenv("TTS_API_KEY", "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJ1cm46Y2hpbmFtYXg6YXBwIiwiYXBwaWQiOiIxMTgyMzUyNzMwOTE0MTU1MDc1IiwidGl2aWFweSI6MTczODgyMzE5MywiZXhwIjo0ODkyNDIzMTkzfQ.pZngE4l9C9D-Wn8u-g_G5959E7VXYJv1Pz8X_E9j0B59I2r4N9T40aBf_81Q2L4n6v97D0H03_H5L4k_T_C3A")
-TTS_WS_URL = os.getenv("TTS_WS_URL", "wss://api.minimax.chat/v1/t2a_v2")
-TTS_MODEL = os.getenv("TTS_MODEL", "speech-01-turbo")@dataclass
+TTS_API_KEY = os.getenv("TTS_API_KEY", "sk-api-zXJJxChrDLeRVIcjFXBALV4Tb1zPvwSS4VzoK04aJhec79EEcA07jX4pARnPuWuAuafw0Wn2PhslrR9vNFO-6n5yItgVf29evRVGDGr3XTcCqiy9BBnfMAQ")
+TTS_WS_URL = os.getenv("TTS_WS_URL", "wss://api.minimaxi.com/ws/v1/t2a_v2")
+TTS_MODEL = os.getenv("TTS_MODEL", "speech-2.6-hd")
+
+
+@dataclass
 class TTSResult:
     """TTS 生成结果"""
     success: bool
@@ -31,7 +34,7 @@ class TTSClient:
         self.model = TTS_MODEL
 
     def get_voice_id(self, speaker_name: str) -> str:
-        """根据角色名获取音色 ID，但在 V0.6 中，前端将会直接传入明确的 voice_id 字符串作为此处的参数"""
+        """根据角色名获取音色 ID，在 V0.6 中，前端将会直接传入明确的 voice_id 字符串作为此处的参数"""
         return speaker_name
 
     async def generate(self, text: str, speaker_name: str = "旁白", speed: float = 1.0) -> TTSResult:
@@ -60,7 +63,7 @@ class TTSClient:
         try:
             ws = await websockets.connect(
                 self.ws_url,
-                additional_headers=headers,
+                extra_headers=headers,
                 ssl=ssl_context
             )
 
@@ -138,7 +141,7 @@ class TTSClient:
 
 
 # 全局 TTS 客户端实例
-_tts_client: TTSClient | None = None
+_tts_client = None
 
 
 def get_tts_client() -> TTSClient:

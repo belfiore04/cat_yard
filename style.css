@@ -332,12 +332,12 @@ body {
 /* 【V0.6 新增】底层极简悬浮小工具球（设置与调试） */
 #float-tools {
     position: absolute;
-    bottom: 25px;
+    bottom: 90px;
     left: 20px;
-    right: 20px;
     display: flex;
-    justify-content: space-between;
-    /* 一个靠左，一个靠右，中间空出位置留给聊天大胶囊或只是空白 */
+    flex-direction: column-reverse;
+    gap: 15px;
+    /* 堆叠在左侧，留出中间和右侧空间 */
     z-index: 9;
     pointer-events: none;
     /* 让这个壳子本身不挡点击 */
