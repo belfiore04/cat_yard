@@ -82,6 +82,10 @@ document.addEventListener('DOMContentLoaded', () => {
     let idleTimer = null;
     let hasGreetedInCurrentSession = false; // 记录当次打开是否寒暄过
 
+    // --- V0.7 WebSocket 聊天状态 ---
+    let chatWs = null;
+    let wsReconnectDelay = 1000; // 重连延迟（指数退避）
+
     // --- V0.6 游荡器状态 ---
     let wanderTimer = null;
     let currentWanderPos = 'pos-center';
@@ -189,6 +193,108 @@ document.addEventListener('DOMContentLoaded', () => {
     if ("Notification" in window && Notification.permission !== "granted" && Notification.permission !== "denied") {
         Notification.requestPermission();
     }
+
+    // --- V0.7 WebSocket 连接管理 ---
+    function connectChatWs() {
+        const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${protocol}//${location.host}/ws/chat`;
+        chatWs = new WebSocket(wsUrl);
+
+        chatWs.onopen = () => {
+            console.log('[WS] 已连接');
+            wsReconnectDelay = 1000; // 重置退避
+            syncGameState(); // 立刻同步一次状态
+        };
+
+        chatWs.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                onWsMessage(data);
+            } catch (e) {
+                console.error('[WS] 解析消息失败:', e);
+            }
+        };
+
+        chatWs.onclose = () => {
+            console.log(`[WS] 连接断开，${wsReconnectDelay / 1000}秒后重连...`);
+            setTimeout(connectChatWs, wsReconnectDelay);
+            wsReconnectDelay = Math.min(wsReconnectDelay * 2, 30000); // 指数退避，最长30秒
+        };
+
+        chatWs.onerror = (e) => {
+            console.error('[WS] 错误:', e);
+            chatWs.close();
+        };
+    }
+
+    // 同步游戏状态给后端
+    function syncGameState() {
+        if (!chatWs || chatWs.readyState !== WebSocket.OPEN) return;
+        chatWs.send(JSON.stringify({
+            type: 'sync',
+            name: personaName,
+            persona: personaPrompt,
+            schedule: schedule,
+            character_state: characterState,
+            current_activity: currentActivity,
+            simulated_day: simulatedDay,
+            simulated_hour: simulatedHour,
+            simulated_minute: simulatedMinute,
+            voice_id: personaVoiceId
+        }));
+    }
+
+    // WebSocket 消息处理器
+    function onWsMessage(data) {
+        if (data.type === 'typing') {
+            // 显示"对方正在输入"
+            chatStatusIndicator.innerText = " (对方正在输入...)";
+            chatStatusIndicator.classList.remove('hidden');
+            return;
+        }
+
+        if (data.type === 'message' || data.type === 'proactive') {
+            // 隐藏"正在输入"
+            chatStatusIndicator.classList.add('hidden');
+
+            const msgContent = data.content || '';
+            chatHistory.push({ role: "assistant", content: msgContent });
+            appendMessage(msgContent, 'ai');
+
+            // 通知逻辑（红点与系统通知）
+            if (!isChatOpen) {
+                // 显示红点
+                unreadBadge.classList.remove('hidden');
+                chatBtn.innerHTML = `💬 <span id="unread-badge" class="badge"></span>`;
+
+                // 桌面通知
+                if (document.hidden && "Notification" in window && Notification.permission === "granted") {
+                    new Notification(`[微信] ${personaName}`, {
+                        body: msgContent,
+                        icon: 'assets/character.png'
+                    });
+                }
+            }
+
+            saveState();
+            isFetchingAI = false;
+        }
+    }
+
+    // 启动 WebSocket
+    connectChatWs();
+
+    // 每次时间跳动时同步状态给后端
+    const originalStartTimeTicker = startTimeTicker;
+    startTimeTicker = function () {
+        originalStartTimeTicker();
+        // 在每次 ticker 重启时注入同步
+    };
+
+    // 在时间系统每次 tick 的时候附带同步
+    const _origTimerCb = setInterval(() => {
+        syncGameState();
+    }, 5000); // 每5秒同步一次状态
 
     // 绑定速率切换
     speedBtn.addEventListener('click', () => {
@@ -692,7 +798,7 @@ document.addEventListener('DOMContentLoaded', () => {
         isFetchingAI = false;
     }
 
-    // 2. 微信系统(含延迟等待和连发回信)
+    // 2. 微信系统(V0.7 WebSocket 版)
     chatBtn.addEventListener('click', () => {
         chatModal.classList.remove('hidden');
         isChatOpen = true;
@@ -713,76 +819,39 @@ document.addEventListener('DOMContentLoaded', () => {
         chatHistory.push({ role: "user", content: text });
         chatMessages.scrollTop = chatMessages.scrollHeight;
 
-        // V0.4：如果不限制输入框，且当前正在获取回复，只把新话追加进历史并退出
         if (isFetchingAI) return;
         isFetchingAI = true;
 
-        // 计算当前活动所需的回复延迟时长（现实毫秒数）
-        let delayMin = currentReplyDelay[0] + Math.random() * (currentReplyDelay[1] - currentReplyDelay[0]);
-        let realMsPerVirtualMin = timeScaleObj.intervalMs / timeScaleObj.stepMinutes;
-        let finalWaitMs = delayMin * realMsPerVirtualMin;
-
-        finalWaitMs += 1500;
-
-        // V0.4：段落式输入反馈算法。若预估等待时间超长，则前期保持静默
-        if (finalWaitMs > 30000) {
-            chatStatusIndicator.classList.add('hidden');
-            await new Promise(r => setTimeout(r, Math.max(0, finalWaitMs - 15000)));
-            chatStatusIndicator.innerText = " (对方正在输入...)";
-            chatStatusIndicator.classList.remove('hidden');
-            await new Promise(r => setTimeout(r, 15000));
+        // 通过 WebSocket 发送消息给后端
+        if (chatWs && chatWs.readyState === WebSocket.OPEN) {
+            chatWs.send(JSON.stringify({
+                type: 'user_message',
+                content: text,
+                history: chatHistory.slice(-25)
+            }));
+            // 后端会先推送 typing，再推送 message，前端的 onWsMessage 会处理
         } else {
+            // WebSocket 断线降级: 走 HTTP
             chatStatusIndicator.innerText = " (对方正在输入...)";
             chatStatusIndicator.classList.remove('hidden');
-            await new Promise(r => setTimeout(r, finalWaitMs));
-        }
 
-        // 传空字符串让后端读取最新的、饱含多次连发的全部历史上下文
-        const messagesArr = await fetchChatReply("");
-
-        // 连发机制出列，一条一条吐出 JSON 返回的数组
-        for (let i = 0; i < messagesArr.length; i++) {
-            let msg = messagesArr[i];
-            if (msg.delay_seconds > 0) {
-                // 等待下一条连发的期间，要亮起正在输入
-                chatStatusIndicator.innerText = " (对方正在输入...)";
-                chatStatusIndicator.classList.remove('hidden');
-                await new Promise(r => setTimeout(r, msg.delay_seconds * 1000));
-            }
+            const messagesArr = await fetchChatReply("");
             chatStatusIndicator.classList.add('hidden');
 
-            chatHistory.push({ role: "assistant", content: msg.content });
-            appendMessage(msg.content, 'ai');
-
-            // 接收新消息时的通知(红点与系统通知)逻辑
-            if (!isChatOpen) {
-                unreadBadge.classList.remove('hidden'); // 显示红点
-                chatBtn.innerText = "💬 (新消息)";
-                // 如果节点被覆盖，要把未读小弟重新带回来
-                chatBtn.innerHTML = `💬 <span id="unread-badge" class="badge"></span>`;
-                setTimeout(() => {
-                    if (!isChatOpen) {
-                        chatBtn.innerHTML = `💬 <span id="unread-badge" class="badge"></span>`;
-                    }
-                }, 3000);
-
-                // 发送浏览器横幅通知 (仅页面不可见且允许了权限时)
-                if (document.hidden && "Notification" in window && Notification.permission === "granted") {
-                    new Notification(`[微信] ${personaName}`, {
-                        body: msg.content,
-                        icon: 'assets/character.png'
-                    });
+            for (let i = 0; i < messagesArr.length; i++) {
+                let msg = messagesArr[i];
+                if (msg.delay_seconds > 0) {
+                    chatStatusIndicator.innerText = " (对方正在输入...)";
+                    chatStatusIndicator.classList.remove('hidden');
+                    await new Promise(r => setTimeout(r, msg.delay_seconds * 1000));
                 }
+                chatStatusIndicator.classList.add('hidden');
+                chatHistory.push({ role: "assistant", content: msg.content });
+                appendMessage(msg.content, 'ai');
             }
-
-            // 对于中间连发的消息稍微再等一等让人看清
-            if (i < messagesArr.length - 1 && msg.delay_seconds <= 0) {
-                await new Promise(r => setTimeout(r, 800));
-            }
+            saveState();
+            isFetchingAI = false;
         }
-
-        saveState(); // 存档
-        isFetchingAI = false;
     }
 
     function appendMessage(text, sender, skipScroll = false) {

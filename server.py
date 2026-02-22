@@ -1,14 +1,33 @@
 import os
 import json
+import asyncio
+import random
+import time
 import httpx
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, FileResponse
 from pydantic import BaseModel
-from typing import List, Dict
+from typing import List, Dict, Optional
 from tts import text_to_speech
 
 app = FastAPI()
+
+# --- WebSocket 全局状态 ---
+active_ws: Optional[WebSocket] = None  # 当前连接的前端客户端（单用户）
+game_state = {
+    "name": "保镖小哥",
+    "persona": "",
+    "schedule": None,
+    "character_state": "home",
+    "current_activity": "发呆",
+    "simulated_day": 5,
+    "simulated_hour": 10,
+    "simulated_minute": 0,
+    "voice_id": "",
+    "chat_history": [],
+    "last_chat_time": 0,  # 上次聊天的 unix 时间戳
+}
 
 # 默认使用 aidramaplayer 中的配置，你也可以通过环境变量覆盖
 LLM_BASE_URL = os.getenv("LLM_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
@@ -230,6 +249,198 @@ async def generate_tts(data: TTSInput):
         return {"audio_base64": result.audio_base64, "duration_ms": result.duration_ms}
     else:
         raise HTTPException(status_code=500, detail=result.error)
+
+
+# --- WebSocket 微信聊天端点 ---
+
+@app.websocket("/ws/chat")
+async def ws_chat(ws: WebSocket):
+    global active_ws
+    await ws.accept()
+    active_ws = ws
+    print("[WS] 前端 WebSocket 已连接")
+    try:
+        while True:
+            raw = await ws.receive_text()
+            data = json.loads(raw)
+            msg_type = data.get("type", "")
+
+            if msg_type == "sync":
+                # 前端定期同步游戏状态
+                game_state["name"] = data.get("name", game_state["name"])
+                game_state["persona"] = data.get("persona", game_state["persona"])
+                game_state["schedule"] = data.get("schedule", game_state["schedule"])
+                game_state["character_state"] = data.get("character_state", game_state["character_state"])
+                game_state["current_activity"] = data.get("current_activity", game_state["current_activity"])
+                game_state["simulated_day"] = data.get("simulated_day", game_state["simulated_day"])
+                game_state["simulated_hour"] = data.get("simulated_hour", game_state["simulated_hour"])
+                game_state["simulated_minute"] = data.get("simulated_minute", game_state["simulated_minute"])
+                game_state["voice_id"] = data.get("voice_id", game_state["voice_id"])
+
+            elif msg_type == "user_message":
+                # 玩家通过微信发来一条消息
+                user_text = data.get("content", "")
+                history = data.get("history", [])
+                game_state["last_chat_time"] = time.time()
+                game_state["chat_history"] = history
+
+                # 1. 先推送 typing 状态
+                await ws.send_text(json.dumps({"type": "typing"}))
+
+                # 2. 构建 Prompt 并调用 LLM
+                day_names = ['一', '二', '三', '四', '五', '六', '日']
+                day_str = day_names[game_state["simulated_day"] - 1]
+                time_str = f"{game_state['simulated_hour']:02d}:{game_state['simulated_minute']:02d}"
+                state_label = '在家里' if game_state["character_state"] == 'home' else '在外面'
+                time_info = f"今天是虚拟时间 星期{day_str} 的 {time_str}。你正在 {game_state['current_activity']} ({state_label})。"
+                schedule_info = json.dumps(game_state["schedule"]) if game_state["schedule"] else ""
+
+                sys_prompt = f'''你正在扮演陪伴游戏中的角色。你的名字是 {game_state["name"]}。你的性格设定是：{game_state["persona"]}。
+你的每周作息表如下（JSON格式）：
+{schedule_info}
+!!!必须遵守的当前物理情境（绝对防御你的时间幻觉）!!!：
+【{time_info}】
+
+你要像平常真实聊天一样回复玩家，简短、口语化，非常真实，切忌像个AI客服或机器人。
+如果你当前处于外出的物理情境，你可以说自己刚刚抽出空回手机。千万不能说违背当前物理情境的话。
+
+!!!关键通讯格式要求!!!：
+为了模拟真人聊天的真实感，你必须以 JSON 格式输出一个包含多条消息的数组（真人打字经常是一段话分两三次发送）。
+请根据你要表达的内容、情绪和性格，拆分成 1 到 4 条消息连发。每条消息必须设定一个由于打字或发呆产生的停顿时间（秒）。
+严格按照如下 JSON 结构输出：
+{{
+  "messages": [
+    {{ "content": "刚开完会", "delay_seconds": 0 }},
+    {{ "content": "怎么啦？", "delay_seconds": 3 }}
+  ]
+}}
+即使只回一条，也必须放在此 JSON 数组中。不要带 markdown 代码块标记，直接输出紧凑的JSON文本。
+'''
+                messages = [{"role": "system", "content": sys_prompt}]
+                for msg in history[-25:]:
+                    messages.append({"role": msg.get("role", "user"), "content": msg.get("content", "")})
+                if user_text:
+                    messages.append({"role": "user", "content": user_text})
+
+                content_raw = ""
+                try:
+                    content_raw = await call_deepseek(messages)
+                    content_raw = content_raw.strip()
+                    if content_raw.startswith("```json"): content_raw = content_raw[7:]
+                    elif content_raw.startswith("```"): content_raw = content_raw[3:]
+                    if content_raw.endswith("```"): content_raw = content_raw[:-3]
+                    content_raw = content_raw.strip()
+                    reply_data = json.loads(content_raw)
+                    reply_messages = reply_data.get("messages", [{"content": str(reply_data), "delay_seconds": 0}])
+                except Exception as e:
+                    print(f"[WS] LLM 或 JSON 解析失败: {e}, raw: {content_raw}")
+                    reply_messages = [{"content": "(信号不好，消息没有发出去...)", "delay_seconds": 0}]
+
+                # 3. 逐条推送消息给前端
+                for msg_item in reply_messages:
+                    await ws.send_text(json.dumps({
+                        "type": "message",
+                        "content": msg_item.get("content", ""),
+                        "delay_seconds": msg_item.get("delay_seconds", 0)
+                    }))
+
+    except WebSocketDisconnect:
+        print("[WS] 前端 WebSocket 已断开")
+        active_ws = None
+    except Exception as e:
+        print(f"[WS] 异常: {e}")
+        active_ws = None
+
+
+# --- 角色自主生命循环（后台定时任务） ---
+
+async def character_life_loop():
+    """角色的独立意识循环。每隔一段现实时间检查是否要主动给玩家发微信。"""
+    while True:
+        await asyncio.sleep(30)  # 每 30 秒现实时间检查一次
+
+        ws = active_ws
+        if ws is None:
+            continue  # 没人连着，不用操心
+
+        # 条件判断：角色是否有「想找你说话」的欲望
+        seconds_since_last_chat = time.time() - game_state.get("last_chat_time", 0)
+        if seconds_since_last_chat < 60:
+            continue  # 刚聊过，别太粘人
+
+        char_state = game_state.get("character_state", "home")
+        if char_state == "sleeping":
+            continue  # 睡觉了就别发了
+
+        # 30% 概率触发主动消息
+        if random.random() > 0.30:
+            continue
+
+        # 构建系统提示词
+        day_names = ['一', '二', '三', '四', '五', '六', '日']
+        day_str = day_names[game_state.get("simulated_day", 1) - 1]
+        hour = game_state.get("simulated_hour", 12)
+        minute = game_state.get("simulated_minute", 0)
+        time_str = f"{hour:02d}:{minute:02d}"
+        activity = game_state.get("current_activity", "发呆")
+        state_label = '在家里' if char_state == 'home' else '在外面'
+        schedule_info = json.dumps(game_state.get("schedule")) if game_state.get("schedule") else ""
+
+        sys_prompt = f'''你正在扮演陪伴游戏中的角色。你的名字是 {game_state.get("name", "角色")}。你的性格设定是：{game_state.get("persona", "")}。
+你的每周作息表如下（JSON格式）：
+{schedule_info}
+当前虚拟时间情境：今天是星期{day_str} 的 {time_str}。你正在 {activity} ({state_label})。
+
+你此刻突然有一件事想分享、吐槽、或者随便找个话题聊聊。可能是你刚看到的东西、想起的事情、对天气的吐槽、或者单纯想找玩家说说话。
+请极度简短地发送 1-2 条消息，就像真人发微信一样自然。不超过两句。
+
+严格按照如下 JSON 结构输出：
+{{
+  "messages": [
+    {{ "content": "在干嘛", "delay_seconds": 0 }}
+  ]
+}}
+不要带 markdown 代码块标记，直接输出紧凑的JSON文本。
+'''
+
+        try:
+            content_raw = await call_deepseek([
+                {"role": "system", "content": sys_prompt},
+                {"role": "user", "content": "（你此刻想主动给玩家发一条微信）"}
+            ])
+            content_raw = content_raw.strip()
+            if content_raw.startswith("```json"): content_raw = content_raw[7:]
+            elif content_raw.startswith("```"): content_raw = content_raw[3:]
+            if content_raw.endswith("```"): content_raw = content_raw[:-3]
+            content_raw = content_raw.strip()
+            reply_data = json.loads(content_raw)
+            reply_messages = reply_data.get("messages", [{"content": content_raw, "delay_seconds": 0}])
+        except Exception as e:
+            print(f"[LifeLoop] 主动消息生成失败: {e}")
+            continue
+
+        # 推送主动消息
+        try:
+            await ws.send_text(json.dumps({"type": "typing"}))
+            await asyncio.sleep(2)  # 模拟打字停顿
+            for msg_item in reply_messages:
+                await ws.send_text(json.dumps({
+                    "type": "proactive",
+                    "content": msg_item.get("content", ""),
+                    "delay_seconds": msg_item.get("delay_seconds", 0)
+                }))
+            game_state["last_chat_time"] = time.time()
+            print(f"[LifeLoop] 角色主动发了消息: {reply_messages}")
+        except Exception as e:
+            print(f"[LifeLoop] 推送失败: {e}")
+
+
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(character_life_loop())
+    print("[Startup] 角色生命循环已启动")
+
+
 
 # 静态文件挂载
 if os.path.exists("assets"):
