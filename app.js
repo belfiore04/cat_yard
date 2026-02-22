@@ -45,11 +45,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const dbgActivity = document.getElementById('dbg-activity');
     const dbgSchedule = document.getElementById('dbg-schedule');
     const dbgLogs = document.getElementById('dbg-logs');
-    const charStatusText = document.getElementById('char-status-text');
+    const charStatusText = document.getElementById('char-status-text'); // Moved and kept
 
     // 时间控制与同步
     const speedBtn = document.getElementById('speed-btn');
     const syncTimeBtn = document.getElementById('sync-time-btn');
+
+    // V0.7 新增 UI 元素
+    const floatTools = document.getElementById('float-tools');
+    const timeSpeedControl = document.getElementById('time-speed-control');
+    const charStatusPill = document.getElementById('char-status-pill');
+
 
     // --- 状态与上下文 ---
     let simulatedDay = 5; // 默认周五开始
@@ -74,6 +80,10 @@ document.addEventListener('DOMContentLoaded', () => {
     let ttsQueue = Promise.resolve();
     let idleTimer = null;
     let hasGreetedInCurrentSession = false; // 记录当次打开是否寒暄过
+
+    // --- V0.6 游荡器状态 ---
+    let wanderTimer = null;
+    let currentWanderPos = 'pos-center';
 
     // 默认测试流速，每1秒(现实)跳动 600秒(10分钟虚拟)，即 600x
     let timeScaleObj = { label: "⏱️ 600x (测试)", stepMinutes: 10, intervalMs: 1000 };
@@ -520,16 +530,38 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (e) { console.error(e); }
     }
 
+
+    // --- V0.6 防僵化游荡机制：角色在家无事时随机走两步 ---
+    function startWanderTimer() {
+        if (wanderTimer) clearInterval(wanderTimer);
+        // 每 1.5 到 3 分钟试图活动一下脚踝
+        const wanderInterval = 90000 + Math.random() * 90000;
+        wanderTimer = setInterval(() => {
+            if (characterState !== 'home' || isFetchingAI) return;
+            const positions = ['pos-center', 'pos-left', 'pos-right'];
+            // 挑一个跟现在不一样的
+            let newPos = currentWanderPos;
+            while (newPos === currentWanderPos) {
+                newPos = positions[Math.floor(Math.random() * positions.length)];
+            }
+            // 剥离掉上一个样式
+            characterContainer.classList.remove('pos-center', 'pos-left', 'pos-right', 'pos-away');
+            characterContainer.classList.add(newPos);
+            currentWanderPos = newPos;
+        }, wanderInterval);
+    }
+    // 监听：初始化就开始散步
+    startWanderTimer();
+
     function updateUIBasedOnState() {
-        const actionBar = document.getElementById('action-bar');
         if (characterState === 'home' || characterState === 'sleeping') {
             chatBtn.classList.add('hidden');
             homeChatArea.classList.remove('hidden');
-            actionBar.classList.remove('floating-mode');
+            charStatusPill.classList.remove('hidden');
         } else {
             homeChatArea.classList.add('hidden');
             chatBtn.classList.remove('hidden');
-            actionBar.classList.add('floating-mode');
+            charStatusPill.classList.add('hidden'); // 外出时顶部的定位胶囊也消失
             chatBubble.classList.add('hidden');
         }
     }

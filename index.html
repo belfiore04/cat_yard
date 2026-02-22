@@ -10,7 +10,7 @@
 
 <body>
     <div id="game-container">
-        <!-- 顶层状态栏 -->
+        <!-- 顶层系统状态与时间栏 -->
         <header id="status-bar">
             <div id="time-weather">
                 <span id="current-time">10:00</span>
@@ -20,6 +20,11 @@
                 <button id="speed-btn" class="speed-btn">⏱️ 600x (测试)</button>
             </div>
         </header>
+
+        <!-- 【重构的行踪胶囊】类似灵动岛悬浮在顶部偏下 -->
+        <div id="char-status-pill">
+            <span class="icon">📍</span> <span id="char-status-text">就在房间里发呆</span>
+        </div>
 
         <!-- 主场景区 -->
         <main id="scene-container">
@@ -39,26 +44,22 @@
             <!-- 桌面惊喜物 -->
             <div id="surprise-item" class="hidden">💌</div>
 
-            <!-- 新增的人物状态栏 -->
-            <div id="char-status-bar">
-                <span>📍 当前行踪：</span><span id="char-status-text">就在房间里发呆</span>
-            </div>
         </main>
 
-        <!-- 底部操作区 -->
-        <footer id="action-bar">
-            <!-- 在家的当面交流框，默认隐藏 -->
-            <div id="home-chat-area" class="hidden">
-                <input type="text" id="home-chat-input" placeholder="直接对他说...">
-                <button id="home-send-btn">🗣️</button>
-            </div>
+        <!-- 悬浮的输入胶囊区：角色在家才展示 -->
+        <div id="home-chat-area" class="hidden">
+            <input type="text" id="home-chat-input" placeholder="直接对他说...">
+            <button id="home-send-btn">🗣️</button>
+        </div>
 
-            <!-- 外出的微信按钮，默认隐藏 -->
-            <button id="chat-btn" class="hidden">💬 微信</button>
+        <!-- 外出的专属微信球 -->
+        <button id="chat-btn" class="hidden">💬</button>
 
-            <button id="settings-btn">⚙️ 设置</button>
-            <button id="dev-btn">🐛 调试</button>
-        </footer>
+        <!-- 纯悬浮图标工具栏，分列两边 -->
+        <div id="float-tools">
+            <button id="settings-btn" title="设置">⚙️</button>
+            <button id="dev-btn" title="调试">🐛</button>
+        </div>
 
         <!-- 设置（捏人）面板 -->
         <div id="settings-modal" class="hidden">
