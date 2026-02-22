@@ -329,6 +329,34 @@ body {
     transform: scale(0.9);
 }
 
+/* 【V0.7 新增】消息未读红点Badge */
+.badge {
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    width: 14px;
+    height: 14px;
+    background-color: #ff3b30;
+    border-radius: 50%;
+    border: 2px solid white;
+    box-shadow: 0 2px 5px rgba(255, 59, 48, 0.5);
+    animation: breathing-badge 2s infinite ease-in-out;
+}
+
+@keyframes breathing-badge {
+
+    0%,
+    100% {
+        transform: scale(1);
+        opacity: 1;
+    }
+
+    50% {
+        transform: scale(1.2);
+        opacity: 0.8;
+    }
+}
+
 /* 【V0.6 新增】底层极简悬浮小工具球（设置与调试） */
 #float-tools {
     position: absolute;

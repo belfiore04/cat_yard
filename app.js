@@ -17,6 +17,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const sendMsgBtn = document.getElementById('send-msg-btn');
     const chatMessages = document.getElementById('chat-messages');
     const chatStatusIndicator = document.getElementById('chat-status-indicator');
+    const unreadBadge = document.getElementById('unread-badge');
 
     // 在家当面聊天
     const homeChatArea = document.getElementById('home-chat-area');
@@ -183,6 +184,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // 启动时间系统
     startTimeTicker();
     resetIdleTimer(); // 启动全页面闲置监听
+
+    // 请求浏览器通知权限
+    if ("Notification" in window && Notification.permission !== "granted" && Notification.permission !== "denied") {
+        Notification.requestPermission();
+    }
 
     // 绑定速率切换
     speedBtn.addEventListener('click', () => {
@@ -557,12 +563,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (characterState === 'home' || characterState === 'sleeping') {
             chatBtn.classList.add('hidden');
             homeChatArea.classList.remove('hidden');
-            charStatusPill.classList.remove('hidden');
         } else {
             homeChatArea.classList.add('hidden');
             chatBtn.classList.remove('hidden');
-            charStatusPill.classList.add('hidden'); // 外出时顶部的定位胶囊也消失
             chatBubble.classList.add('hidden');
+            // 注意：V0.7 移除了外出隐藏 charStatusPill 的逻辑，让状态栏常驻
         }
     }
 
@@ -690,6 +695,7 @@ document.addEventListener('DOMContentLoaded', () => {
         isChatOpen = true;
         chatInput.disabled = false;
         chatInput.focus();
+        unreadBadge.classList.add('hidden'); // 清除未读红点
     });
     closeChatBtn.addEventListener('click', () => { chatModal.classList.add('hidden'); isChatOpen = false; });
     sendMsgBtn.addEventListener('click', sendWechatMessage);
@@ -745,10 +751,25 @@ document.addEventListener('DOMContentLoaded', () => {
             chatHistory.push({ role: "assistant", content: msg.content });
             appendMessage(msg.content, 'ai');
 
-            // 呼吸灯提示外在的玩家
+            // 接收新消息时的通知(红点与系统通知)逻辑
             if (!isChatOpen) {
+                unreadBadge.classList.remove('hidden'); // 显示红点
                 chatBtn.innerText = "💬 (新消息)";
-                setTimeout(() => { if (!isChatOpen) chatBtn.innerText = "💬 微信"; }, 3000);
+                // 如果节点被覆盖，要把未读小弟重新带回来
+                chatBtn.innerHTML = `💬 <span id="unread-badge" class="badge"></span>`;
+                setTimeout(() => {
+                    if (!isChatOpen) {
+                        chatBtn.innerHTML = `💬 <span id="unread-badge" class="badge"></span>`;
+                    }
+                }, 3000);
+
+                // 发送浏览器横幅通知 (仅页面不可见且允许了权限时)
+                if (document.hidden && "Notification" in window && Notification.permission === "granted") {
+                    new Notification(`[微信] ${personaName}`, {
+                        body: msg.content,
+                        icon: 'assets/character.png'
+                    });
+                }
             }
 
             // 对于中间连发的消息稍微再等一等让人看清
