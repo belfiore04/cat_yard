@@ -58,6 +58,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let personaName = "保镖小哥";
     let personaPrompt = document.getElementById('persona-prompt').value;
+    let personaVoiceId = "VoiceClone1769669614463074596";
 
     let schedule = null; // 由 DeepSeek 生成的作息
     let characterState = 'idle';
@@ -66,8 +67,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let chatHistory = [];
     let isChatOpen = false;
-    let isFetchingAI = false; // 是否有一趟请求在处理（替代原来的 isWaitingReply）
+    let isFetchingAI = false; // 是否有一趟请求在处理
     let activeRandomEvent = null; // 当前突发事件状态
+
+    // --- V0.6 语音队列与搭讪系统状态 ---
+    let ttsQueue = Promise.resolve();
+    let idleTimer = null;
+    let hasGreetedInCurrentSession = false; // 记录当次打开是否寒暄过
 
     // 默认测试流速，每1秒(现实)跳动 600秒(10分钟虚拟)，即 600x
     let timeScaleObj = { label: "⏱️ 600x (测试)", stepMinutes: 10, intervalMs: 1000 };
@@ -86,6 +92,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const stateData = {
             personaName,
             personaPrompt,
+            personaVoiceId,
             schedule,
             chatHistory
         };
@@ -99,11 +106,13 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = JSON.parse(dataStr);
             if (data.personaName) personaName = data.personaName;
             if (data.personaPrompt) personaPrompt = data.personaPrompt;
+            if (data.personaVoiceId) personaVoiceId = data.personaVoiceId;
             if (data.schedule) schedule = data.schedule;
             if (data.chatHistory) chatHistory = data.chatHistory;
 
             document.getElementById('persona-name').value = personaName;
             document.getElementById('persona-prompt').value = personaPrompt;
+            document.getElementById('persona-voice-id').value = personaVoiceId;
             document.getElementById('chat-title').innerText = `📱 和 ${personaName} 的聊天`;
 
             // 恢复历史记录UI
@@ -163,6 +172,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 启动时间系统
     startTimeTicker();
+    resetIdleTimer(); // 启动全页面闲置监听
 
     // 绑定速率切换
     speedBtn.addEventListener('click', () => {
@@ -280,6 +290,110 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (e) {
             return "桌上放着一盒你爱吃的点心。";
         }
+    }
+
+    // --- V0.6 TTS 播放队列调度器 ---
+    async function enqueueTTSPlay(text, speakerVoiceId) {
+        if (!speakerVoiceId) return;
+
+        // 1. 发起后端请求（这里不 block UI，但返回的是音频的 base64 Promise）
+        const reqPromise = fetch('/api/tts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text, voice_id: speakerVoiceId })
+        }).then(res => res.json()).catch(e => {
+            console.error("TTS Fetch Error:", e);
+            return null;
+        });
+
+        // 2. 将播放动作塞入异步排队流 ttsQueue，以保证说话是有序且接连不断的
+        ttsQueue = ttsQueue.then(async () => {
+            const data = await reqPromise;
+            if (!data || !data.audio_base64) return;
+
+            return new Promise((resolve) => {
+                const audio = new Audio("data:audio/mp3;base64," + data.audio_base64);
+                audio.onended = () => resolve();
+                audio.onerror = () => resolve();
+                audio.play().catch(e => {
+                    console.log("Audio play blocked by browser:", e);
+                    resolve();
+                });
+            });
+        });
+
+        return reqPromise;
+    }
+
+    // --- V0.6 闲置与切后台搭讪机制 ---
+    function resetIdleTimer() {
+        if (idleTimer) clearTimeout(idleTimer);
+        // 如果是在家，并且正在1倍速，设置 3 分钟的闲散碎嘴机制
+        if (characterState === 'home' && currentSpeedIndex === 0) {
+            idleTimer = setTimeout(triggerIdleMonologue, 180000);
+        }
+    }
+    ['mousemove', 'mousedown', 'keypress', 'touchstart'].forEach(evt =>
+        document.addEventListener(evt, resetIdleTimer, { passive: true })
+    );
+
+    async function triggerIdleMonologue() {
+        // 如果他在忙/在跟玩家对线/在睡觉/在用电脑，就不搭茬
+        if (isFetchingAI || characterState !== 'home') return;
+        const promptOverride = "玩家一直把你挂在屏幕边上很久没说话了。请极度简短地自言自语一句此时此刻你想说的话，或者吐槽一下，不超过10个字。";
+        await initiateProactiveGreet(promptOverride);
+    }
+
+    document.addEventListener("visibilitychange", () => {
+        if (!document.hidden && currentSpeedIndex === 0 && characterState === 'home') {
+            const promptOverride = hasGreetedInCurrentSession
+                ? "你的玩家离开了页面一小会儿，现在刚刚切回来看你。请非常自然地打半个招呼，不超过10个字。"
+                : "玩家刚刚进入/打开了这个页面来看你。请对他/她的到来以极简、高冷的符合你的人设方式打个日常的招呼。";
+
+            initiateProactiveGreet(promptOverride);
+            hasGreetedInCurrentSession = true;
+        }
+    });
+
+    async function initiateProactiveGreet(systemInstruction) {
+        if (isFetchingAI) return;
+        isFetchingAI = true;
+        chatBubble.innerText = "...";
+        chatBubble.classList.remove('hidden');
+        thoughtBubble.classList.add('hidden');
+
+        try {
+            const dayStr = ['一', '二', '三', '四', '五', '六', '日'][simulatedDay - 1];
+            const timeStr = `${String(simulatedHour).padStart(2, '0')}:${String(simulatedMinute).padStart(2, '0')}`;
+            const reqBody = {
+                name: personaName,
+                persona: personaPrompt,
+                time_info: `今天是星期${dayStr} 的 ${timeStr}。你正在 ${currentActivity} 。指令：${systemInstruction}`,
+                user_message: "（暗中观察了你一眼）",
+                history: []
+            };
+            const res = await fetch('/api/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(reqBody)
+            });
+            const data = await res.json();
+            const msgObj = data.messages ? data.messages[0] : null;
+            if (msgObj) {
+                chatBubble.innerText = msgObj.content;
+                await enqueueTTSPlay(msgObj.content, personaVoiceId);
+            }
+        } catch (e) {
+            chatBubble.innerText = "（空气很安静）";
+        }
+
+        setTimeout(() => {
+            if (!isFetchingAI) {
+                chatBubble.classList.add('hidden');
+                thoughtBubble.classList.remove('hidden');
+            }
+        }, 8000);
+        isFetchingAI = false;
     }
 
     // --- 核心方法：状态解析 ---
@@ -407,13 +521,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function updateUIBasedOnState() {
+        const actionBar = document.getElementById('action-bar');
         if (characterState === 'home' || characterState === 'sleeping') {
             chatBtn.classList.add('hidden');
             homeChatArea.classList.remove('hidden');
+            actionBar.classList.remove('floating-mode');
         } else {
             homeChatArea.classList.add('hidden');
             chatBtn.classList.remove('hidden');
-            // 关闭在家的气泡（如果有）
+            actionBar.classList.add('floating-mode');
             chatBubble.classList.add('hidden');
         }
     }
@@ -455,6 +571,7 @@ document.addEventListener('DOMContentLoaded', () => {
     saveSettingsBtn.addEventListener('click', () => {
         personaName = document.getElementById('persona-name').value.trim() || "保镖小哥";
         personaPrompt = document.getElementById('persona-prompt').value.trim();
+        personaVoiceId = document.getElementById('persona-voice-id').value.trim();
         document.getElementById('chat-title').innerText = `📱 和 ${personaName} 的聊天`;
         generateSchedule();
 
@@ -502,21 +619,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const messagesArr = await fetchChatReply("");
 
+        // V0.6 针对连发气泡：发起预读取并放入有序语音队列
         for (let i = 0; i < messagesArr.length; i++) {
             let msg = messagesArr[i];
 
-            // 如果不是第一条，或者是强制了思考时间的，显示点点点等一下
             if (msg.delay_seconds > 0 || i > 0) {
                 chatBubble.innerText = "...";
                 await new Promise(r => setTimeout(r, Math.max(1, msg.delay_seconds) * 1000));
             }
 
+            // 发起语音入列及播放
+            enqueueTTSPlay(msg.content, personaVoiceId);
+
             chatBubble.innerText = msg.content;
             chatHistory.push({ role: "assistant", content: msg.content });
 
-            // 停顿一会再发下一条（模拟阅读这段话需要的时间）
+            // 对于最后一句，我们不必再强行停留。否则停留时间改为文字长度换算或通过音频流阻塞
             if (i < messagesArr.length - 1) {
-                await new Promise(r => setTimeout(r, 1500 + msg.content.length * 100));
+                await new Promise(r => setTimeout(r, 1500 + msg.content.length * 150));
             }
         }
 

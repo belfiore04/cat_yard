@@ -63,6 +63,7 @@ body {
 
 #status-bar.night-mode {
     color: #f0f0f0;
+    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8), 0 0 15px rgba(255, 255, 255, 0.3);
 }
 
 .speed-btn {
@@ -97,49 +98,47 @@ body {
     transition: background-image 2s ease-in-out;
 }
 
-/* 角色与状态 V0.2：透明底动画版 */
+/* 角色与状态 V0.6：双层分离动画（外层走动、内层呼吸） */
 #character-container {
     position: absolute;
     bottom: 25%;
     left: 50%;
-    /* 改回 50% 基准 */
+    /* 默认 50% 居中 */
     display: flex;
     flex-direction: column;
     align-items: center;
-    /* 会让气泡和人物自动横向居中 */
     justify-content: flex-end;
-    /* 贴底对齐 */
-    transition: all 2s ease-in-out;
+    /* 极其平滑的漫步过渡动画 */
+    transition: transform 3s ease-in-out, opacity 1s ease-in-out;
     z-index: 5;
     transform: translateX(-50%);
-    /* 基础的从中心点向左回拉一半，确保完全居中 */
 }
 
-/* 几种假定好的方位锚点（模拟在房间走动） */
+/* 几种假定好的方位锚点（外层控制 X 轴平移，用于模拟走路巡逻） */
 #character-container.pos-center {
-    transform: translateX(-50%) translate(0, 0) scale(1);
+    transform: translateX(-50%);
 }
 
 #character-container.pos-left {
-    transform: translateX(-50%) translate(-60px, 20px) scale(1.1);
+    transform: translateX(calc(-50% - 70px));
 }
 
 #character-container.pos-right {
-    transform: translateX(-50%) translate(80px, -10px) scale(0.9);
+    transform: translateX(calc(-50% + 70px));
 }
 
 #character-container.pos-away {
-    transform: translateX(-50%) translate(0, 0) scale(1);
-    /* V0.3 修改为完全隐身，只有在家才能看到人 */
+    transform: translateX(-50%);
     opacity: 0;
     pointer-events: none;
 }
 
 #character-img {
     height: 250px;
-    /* 从 350px 缩为 250px 避免过大超出屏幕 */
     width: auto;
     object-fit: contain;
+    /* V0.6：内层控制 Y 轴缩放，用于精准模拟胸腔呼吸，锚点死死定在脚底 */
+    transform-origin: bottom center;
     animation: idle-breathe 4s ease-in-out infinite;
     filter: drop-shadow(0 10px 10px rgba(0, 0, 0, 0.3));
 }
@@ -148,11 +147,12 @@ body {
 
     0%,
     100% {
-        transform: scaleY(1);
+        transform: scaleY(1) scaleX(1);
     }
 
     50% {
-        transform: scaleY(0.98);
+        /* 轻微拉伸营造吸气/胸腔起伏，视觉极度克制 */
+        transform: scaleY(0.985) scaleX(1.005);
     }
 }
 
@@ -239,33 +239,57 @@ body {
     justify-content: space-between;
 }
 
-/* 底部操作区 */
+/* V0.6 底部悬浮操作区（Floating Action Bar） */
 #action-bar {
-    height: 80px;
-    background: white;
+    position: absolute;
+    bottom: 25px;
+    /* 离开防区底部 */
+    left: 15px;
+    right: 15px;
+    height: 60px;
+    background: rgba(255, 255, 255, 0.45);
+    /* 极度清透的玻璃面板 */
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 30px;
     display: flex;
-    justify-content: space-around;
+    justify-content: space-between;
     align-items: center;
-    padding: 0 20px;
-    box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.05);
+    padding: 0 10px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
     z-index: 10;
+    transition: opacity 0.4s ease, transform 0.4s ease;
+}
+
+/* 如果角色外出被隐藏，不仅 #action-bar 我们要在 app.js 里处理，微信按钮还会变成悬浮球形态 */
+#action-bar.floating-mode {
+    bottom: 30px;
+    left: auto;
+    right: 20px;
+    width: 60px;
+    height: 60px;
+    padding: 0;
+    border-radius: 50%;
+    justify-content: center;
 }
 
 #action-bar button {
-    background: #f0f2f5;
+    background: rgba(255, 255, 255, 0.6);
     border: none;
-    padding: 12px 25px;
+    padding: 10px 18px;
     border-radius: 20px;
-    font-size: 16px;
-    font-weight: 500;
+    font-size: 15px;
+    font-weight: 600;
     color: #444;
     cursor: pointer;
     transition: background 0.2s, transform 0.1s;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
 }
 
 #action-bar button:active {
     transform: scale(0.95);
-    background: #e4e6e9;
+    background: rgba(255, 255, 255, 0.8);
 }
 
 /* 在家当面聊天的输入栏 */
@@ -279,16 +303,21 @@ body {
 #home-chat-input {
     flex: 1;
     padding: 10px 15px;
-    border: 1px solid #ddd;
-    border-radius: 20px;
-    background: #f9f9f9;
+    border: none;
+    background: transparent;
     outline: none;
+    font-size: 15px;
+}
+
+#home-chat-input::placeholder {
+    color: rgba(0, 0, 0, 0.4);
 }
 
 #home-send-btn {
     padding: 0 15px !important;
-    background: #4caf50 !important;
-    color: white !important;
+    background: rgba(255, 255, 255, 0.8) !important;
+    color: #444 !important;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
 }
 
 #chat-btn {

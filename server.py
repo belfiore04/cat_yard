@@ -6,6 +6,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, FileResponse
 from pydantic import BaseModel
 from typing import List, Dict
+from tts import text_to_speech
 
 app = FastAPI()
 
@@ -201,6 +202,25 @@ async def generate_random_event(data: RandomEventInput):
             "duration": 10,
             "reply_delay": [1, 3]
         }
+
+class TTSInput(BaseModel):
+    text: str
+    voice_id: str
+
+@app.post("/api/tts")
+async def generate_tts(data: TTSInput):
+    """
+    提供给前端的 TTS 流式获取接口
+    """
+    result = await text_to_speech(
+        text=data.text,
+        speaker_name=data.voice_id,
+        speed=1.0
+    )
+    if result.success:
+        return {"audio_base64": result.audio_base64, "duration_ms": result.duration_ms}
+    else:
+        raise HTTPException(status_code=500, detail=result.error)
 
 # 静态文件挂载
 if os.path.exists("assets"):
