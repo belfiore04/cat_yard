@@ -36,6 +36,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const settingsModal = document.getElementById('settings-modal');
     const closeSettingsBtn = document.getElementById('close-settings-btn');
     const saveSettingsBtn = document.getElementById('save-settings-btn');
+    const resetSaveBtn = document.getElementById('reset-save-btn');
     const settingsLoading = document.getElementById('settings-loading');
 
     const debugPanel = document.getElementById('debug-panel');
@@ -246,6 +247,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // WebSocket 消息处理器
     function onWsMessage(data) {
+        if (data.type === 'debug_llm') {
+            appendDebugLog('DeepSeek 调用明细', data.prompt, data.raw_response);
+            return;
+        }
+
         if (data.type === 'typing') {
             // 显示"对方正在输入"
             chatStatusIndicator.innerText = " (对方正在输入...)";
@@ -731,6 +737,13 @@ document.addEventListener('DOMContentLoaded', () => {
         saveState(); // 存档
     });
 
+    resetSaveBtn.addEventListener('click', () => {
+        if (confirm("确定要清空所有聊天记录、作息和人设存档吗？清空后游戏将重新生成和加载。")) {
+            localStorage.removeItem('ai_companion_save');
+            location.reload();
+        }
+    });
+
     devBtn.addEventListener('click', () => debugPanel.classList.remove('hidden'));
     closeDebugBtn.addEventListener('click', () => debugPanel.classList.add('hidden'));
 
@@ -805,6 +818,7 @@ document.addEventListener('DOMContentLoaded', () => {
         chatInput.disabled = false;
         chatInput.focus();
         unreadBadge.classList.add('hidden'); // 清除未读红点
+        chatMessages.scrollTop = chatMessages.scrollHeight; // 滚动到最新消息
     });
     closeChatBtn.addEventListener('click', () => { chatModal.classList.add('hidden'); isChatOpen = false; });
     sendMsgBtn.addEventListener('click', sendWechatMessage);

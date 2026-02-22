@@ -687,6 +687,14 @@ body {
     font-size: 10px;
 }
 
+#dbg-logs {
+    margin-top: 5px;
+    max-height: 350px;
+    overflow-y: auto;
+    word-break: break-all;
+    padding-right: 5px;
+}
+
 .hidden {
     display: none !important;
 }

@@ -73,7 +73,21 @@ async def call_deepseek(messages: List[Dict[str, str]]) -> str:
             )
             response.raise_for_status()
             result = response.json()
-            return result["choices"][0]["message"]["content"]
+            content = result["choices"][0]["message"]["content"]
+            
+            # --- 增加调试信息推送到前端 ---
+            if active_ws:
+                try:
+                    # 使用 asyncio.create_task 避免阻塞
+                    asyncio.create_task(active_ws.send_text(json.dumps({
+                        "type": "debug_llm",
+                        "prompt": messages,
+                        "raw_response": content
+                    })))
+                except Exception as e:
+                    print(f"[Debug WS Drop] {e}")
+
+            return content
         except Exception as e:
             print(f"Error calling LLM: {e}")
             raise HTTPException(status_code=500, detail="LLM call failed")
@@ -322,6 +336,12 @@ async def ws_chat(ws: WebSocket):
                 if user_text:
                     messages.append({"role": "user", "content": user_text})
 
+                # --- 增加 Debug 打印：每次与 LLM 通讯到底发了什么 ---
+                print("====== [WS Chat] 正在请求 LLM ======")
+                print(f"当前时间与状态: {time_info}")
+                print(f"附带历史消息数量: {len(history[-25:])}")
+                print("====================================")
+
                 content_raw = ""
                 try:
                     content_raw = await call_deepseek(messages)
@@ -334,14 +354,22 @@ async def ws_chat(ws: WebSocket):
                     reply_messages = reply_data.get("messages", [{"content": str(reply_data), "delay_seconds": 0}])
                 except Exception as e:
                     print(f"[WS] LLM 或 JSON 解析失败: {e}, raw: {content_raw}")
-                    reply_messages = [{"content": "(信号不好，消息没有发出去...)", "delay_seconds": 0}]
+                    # 如果模型没有输出合法的 JSON，而是直接回复了文本，我们不要吞掉它的话
+                    reply_messages = [{"content": content_raw.strip(), "delay_seconds": 0}]
 
                 # 3. 逐条推送消息给前端
-                for msg_item in reply_messages:
+                for i, msg_item in enumerate(reply_messages):
+                    delay = msg_item.get("delay_seconds", 0)
+                    if delay > 0 and i > 0:
+                        await ws.send_text(json.dumps({"type": "typing"}))
+                        await asyncio.sleep(delay)
+                    elif delay > 0 and i == 0:
+                        await asyncio.sleep(delay)
+                        
                     await ws.send_text(json.dumps({
                         "type": "message",
                         "content": msg_item.get("content", ""),
-                        "delay_seconds": msg_item.get("delay_seconds", 0)
+                        "delay_seconds": delay
                     }))
 
     except WebSocketDisconnect:
@@ -404,6 +432,11 @@ async def character_life_loop():
 '''
 
         try:
+            # --- 增加 Debug 打印：主动发消息时的绝对情境 ---
+            print("====== [LifeLoop] 正在尝试触发主动消息 ======")
+            print(f"当前时间与状态: 今天是星期{day_str} 的 {time_str}。正在 {activity} ({state_label})。")
+            print("=============================================")
+
             content_raw = await call_deepseek([
                 {"role": "system", "content": sys_prompt},
                 {"role": "user", "content": "（你此刻想主动给玩家发一条微信）"}
@@ -416,18 +449,26 @@ async def character_life_loop():
             reply_data = json.loads(content_raw)
             reply_messages = reply_data.get("messages", [{"content": content_raw, "delay_seconds": 0}])
         except Exception as e:
-            print(f"[LifeLoop] 主动消息生成失败: {e}")
-            continue
+            print(f"[LifeLoop] 主动消息生成 JSON 解析失败: {e}")
+            # 依然采纳模型输出的文本内容
+            reply_messages = [{"content": content_raw.strip(), "delay_seconds": 0}]
 
         # 推送主动消息
         try:
             await ws.send_text(json.dumps({"type": "typing"}))
             await asyncio.sleep(2)  # 模拟打字停顿
-            for msg_item in reply_messages:
+            for i, msg_item in enumerate(reply_messages):
+                delay = msg_item.get("delay_seconds", 0)
+                if delay > 0 and i > 0:
+                    await ws.send_text(json.dumps({"type": "typing"}))
+                    await asyncio.sleep(delay)
+                elif delay > 0 and i == 0:
+                    await asyncio.sleep(delay)
+                    
                 await ws.send_text(json.dumps({
                     "type": "proactive",
                     "content": msg_item.get("content", ""),
-                    "delay_seconds": msg_item.get("delay_seconds", 0)
+                    "delay_seconds": delay
                 }))
             game_state["last_chat_time"] = time.time()
             print(f"[LifeLoop] 角色主动发了消息: {reply_messages}")
